@@ -30,6 +30,11 @@
         ((begin? exp)
          (eval-sequence (begin-actions exp) env))
         ((cond? exp) (mceval (cond->if exp) env))
+        ((and? exp) (eval-and exp env))
+        ((or? exp) (eval-or exp env))
+        ((let? exp) (eval-let exp env))
+        ((delay? exp) (eval-delay exp env))
+        ((force? exp) (eval-force exp env))
         ((application? exp)
          (mcapply (mceval (operator exp) env)
                   (list-of-values (operands exp) env)))
@@ -50,7 +55,6 @@
          (error
           "Unknown procedure type -- APPLY" procedure))))
 
-
 (define (list-of-values exps env)
   (if (no-operands? exps)
       '()
@@ -61,6 +65,43 @@
   (if (true? (mceval (if-predicate exp) env))
       (mceval (if-consequent exp) env)
       (mceval (if-alternative exp) env)))
+
+(define (eval-and exp env)
+  (if (last-exp? exp)
+      #t
+      (if (last-exp? (rest-exps exp))
+          (mceval (first-exp (rest-exps exp)) env)
+          (if (true? (mceval (car (rest-exps exp)) env))
+              (mceval (and-next exp) env)
+              #f))))
+
+(define (eval-or exp env)
+  (if (last-exp? exp)
+      #f
+      (if (true? (mceval (car (rest-exps exp)) env))
+          #t
+          (mceval (or-next exp) env))))
+
+(define (eval-delay exp env)
+  (mceval (delay->lambda  exp) env))
+
+(define (eval-force exp env)
+  (mceval (rest-exps exp) env))
+
+(define (eval-let exp env)
+  (eval-sequence (rest-exps (rest-exps exp)) (extend-environment (store-var-let (first-exp (rest-exps exp))) (list-of-values (store-val-let (first-exp (rest-exps exp))) env) env))
+  )
+
+(define (store-var-let exp)
+  (if (null? exp)
+      '()
+      (cons (first-exp (first-exp exp)) (store-var-let (rest-exps exp)))))
+
+(define (store-val-let exp)
+  (if (null? exp)
+      '()
+      (cons (first-exp (rest-exps (first-exp exp))) (store-val-let (rest-exps exp)))))
+  
 
 (define (eval-sequence exps env)
   (cond ((last-exp? exps) (mceval (first-exp exps) env))
@@ -145,6 +186,19 @@
 (define (make-if predicate consequent alternative)
   (list 'if predicate consequent alternative))
 
+(define (and? exp) (tagged-list? exp 'and))
+(define (and-next exp)
+  (cons 'and (rest-exps (rest-exps exp))))
+
+(define (or? exp) (tagged-list? exp 'or))
+(define (or-next exp)
+  (cons 'or (rest-exps (rest-exps exp))))
+
+(define (delay? exp) (tagged-list? exp 'delay))
+
+(define (force? exp) (tagged-list? exp 'force))
+
+(define (let? exp) (tagged-list? exp 'let))
 
 (define (begin? exp) (tagged-list? exp 'begin))
 
@@ -169,7 +223,6 @@
 (define (no-operands? ops) (null? ops))
 (define (first-operand ops) (car ops))
 (define (rest-operands ops) (cdr ops))
-
 
 (define (cond? exp) (tagged-list? exp 'cond))
 
@@ -199,6 +252,8 @@
                      (sequence->exp (cond-actions first))
                      (expand-clauses rest))))))
 
+(define (delay->lambda exp)
+  (append '(lambda()) (list (car (cdr exp)))))
 ;;;SECTION 4.1.3
 
 (define (true? x)
@@ -300,12 +355,25 @@
 
 (define (primitive-implementation proc) (cadr proc))
 
+(define (error-handle)
+  (error "Metacircular Interpreter Aborted")
+  )
+
 (define primitive-procedures
   (list (list 'car car)
         (list 'cdr cdr)
         (list 'cons cons)
         (list 'null? null?)
-;;      more primitives
+        (list '+ +)
+        (list '* *)
+        (list '- -)
+        (list '/ /)
+        (list '< <)
+        (list '<= <=)
+        (list '= =)
+        (list '>= >=)
+        (list '> >)
+        (list 'error error-handle)
         ))
 
 (define (primitive-procedure-names)
